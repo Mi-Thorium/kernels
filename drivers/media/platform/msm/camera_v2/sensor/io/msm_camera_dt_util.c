@@ -15,6 +15,10 @@
 #include "msm_camera_i2c_mux.h"
 #include "msm_cci.h"
 #include <media/adsp-shmem-device.h>
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#include <nokia-sdm439/mach.h>
+#include "nokia_sdm439_camera_vars.h"
+#endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_SDM439)
 #include <xiaomi-sdm439/mach.h>
 #endif
@@ -1519,6 +1523,15 @@ int msm_camera_power_up(struct msm_camera_power_ctrl_t *ctrl,
 			if (!ctrl->gpio_conf->gpio_num_info->valid
 				[power_setting->seq_val])
 				continue;
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+			if (nokia_sdm439_mach_get()) {
+				if (nokia_sdm439_sensor_addr_self == 0x2e) {  //aux camera i2c addr
+					if ((nokia_sdm439_rear_cam_avdd == 1) && //back camera power up avdd
+						(ctrl->gpio_conf->gpio_num_info->gpio_num[power_setting->seq_val] == 35)) //avdd gpio
+						break;
+				}
+			}
+#endif
 			CDBG("%s:%d gpio set val %d\n", __func__, __LINE__,
 				ctrl->gpio_conf->gpio_num_info->gpio_num
 				[power_setting->seq_val]);
@@ -1526,6 +1539,13 @@ int msm_camera_power_up(struct msm_camera_power_ctrl_t *ctrl,
 				ctrl->gpio_conf->gpio_num_info->gpio_num
 				[power_setting->seq_val],
 				(int) power_setting->config_val);
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+			if (nokia_sdm439_mach_get()) {
+				if ((ctrl->gpio_conf->gpio_num_info->gpio_num[power_setting->seq_val] == 41) && (nokia_sdm439_sensor_addr_self == 0x2e)) {
+					nokia_sdm439_rear_cam_avdd += 1;
+				}
+			}
+#endif
 			break;
 		case SENSOR_VREG:
 			if (power_setting->seq_val == INVALID_VREG)
@@ -1598,6 +1618,15 @@ power_up_failed:
 			if (!ctrl->gpio_conf->gpio_num_info->valid
 				[power_setting->seq_val])
 				continue;
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+			if (nokia_sdm439_mach_get()) {
+				if (nokia_sdm439_sensor_addr_self == 0x2e){  // aux camera i2c addr
+					if ((nokia_sdm439_rear_cam_avdd == 1) && // back camera power up avdd
+						(ctrl->gpio_conf->gpio_num_info->gpio_num[power_setting->seq_val] == 35)) // avdd gpio
+						break;
+				}
+			}
+#endif
 			gpio_set_value_cansleep(
 				ctrl->gpio_conf->gpio_num_info->gpio_num
 				[power_setting->seq_val], GPIOF_OUT_INIT_LOW);
@@ -1725,6 +1754,15 @@ int msm_camera_power_down(struct msm_camera_power_ctrl_t *ctrl,
 			if (!ctrl->gpio_conf->gpio_num_info->valid
 				[pd->seq_val])
 				continue;
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+			if (nokia_sdm439_mach_get()) {
+				if (nokia_sdm439_sensor_addr_self == 0x2e) {  // aux camera i2c addr
+					if ((nokia_sdm439_rear_cam_avdd == 2) &&
+						(ctrl->gpio_conf->gpio_num_info->gpio_num[pd->seq_val] == 35)) // avdd gpio
+						break;
+				}
+			}
+#endif
 			gpio_set_value_cansleep(
 				ctrl->gpio_conf->gpio_num_info->gpio_num
 				[pd->seq_val],

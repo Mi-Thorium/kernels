@@ -19,6 +19,10 @@
 #include <soc/qcom/camera2.h>
 #include <linux/msm-bus.h>
 #include "msm_camera_io_util.h"
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#include <nokia-sdm439/mach.h>
+#include "nokia_sdm439_camera_vars.h"
+#endif
 
 #define BUFF_SIZE_128 128
 
@@ -757,6 +761,12 @@ int msm_camera_request_gpio_table(struct gpio *gpio_tbl, uint8_t size,
 		return -EINVAL;
 	}
 	for (i = 0; i < size; i++) {
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+		if (nokia_sdm439_mach_get()) {
+			if ((nokia_sdm439_rear_cam_avdd == 1) && (nokia_sdm439_sensor_addr_self == 0x2e) && (gpio_tbl[i].gpio == 41))
+				size -= 1;
+		}
+#endif
 		CDBG("%s:%d i %d, gpio %d dir %ld\n", __func__, __LINE__, i,
 			gpio_tbl[i].gpio, gpio_tbl[i].flags);
 	}
@@ -774,9 +784,21 @@ int msm_camera_request_gpio_table(struct gpio *gpio_tbl, uint8_t size,
 					__func__, __LINE__,
 					gpio_tbl[i].gpio, gpio_tbl[i].label);
 			}
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+			if (nokia_sdm439_mach_get()) {
+				if (!strcmp(gpio_tbl[i].label,"CAM_STANDBY1"))
+					nokia_sdm439_depth_camera_id = gpio_tbl[i].gpio;
+			}
+#endif
 		}
 	} else {
 		gpio_free_array(gpio_tbl, size);
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+		if (nokia_sdm439_mach_get()) {
+			if (nokia_sdm439_sensor_addr_self != 0x2e) // rear camera
+				nokia_sdm439_rear_cam_avdd = 0;
+		}
+#endif
 	}
 	return rc;
 }

@@ -17,6 +17,9 @@
 #include "msm_sd.h"
 #include "msm_cci.h"
 #include "msm_eeprom.h"
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#include <nokia-sdm439/mach.h>
+#endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_MSM8937)
 #include <xiaomi-msm8937/mach.h>
 #endif
@@ -439,6 +442,9 @@ static int eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
 					gc < eeprom_map->mem_settings[i].
 						reg_data;
 					gc++) {
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+					if (!nokia_sdm439_mach_get())
+#endif
 					msleep(eeprom_map->mem_settings[i].
 						delay);
 					rc = e_ctrl->i2c_client.i2c_func_tbl->
@@ -457,6 +463,10 @@ static int eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
 					*memptr = (uint8_t)gc_read;
 					memptr++;
 				}
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+				if (nokia_sdm439_mach_get())
+					msleep(eeprom_map->mem_settings[i].delay);
+#endif
 			}
 			break;
 

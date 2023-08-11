@@ -18,6 +18,10 @@
 #include <linux/regulator/rpm-smd-regulator.h>
 #include <linux/regulator/consumer.h>
 #include <media/adsp-shmem-device.h>
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#include <nokia-sdm439/mach.h>
+#include "nokia_sdm439_camera_vars.h"
+#endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_MSM8937)
 #include <xiaomi-msm8937/mach.h>
 #endif
@@ -161,6 +165,11 @@ int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 	sensor_device_type = s_ctrl->sensor_device_type;
 	sensor_i2c_client = s_ctrl->sensor_i2c_client;
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get())
+		nokia_sdm439_sensor_addr_self = s_ctrl->sensordata->slave_info->sensor_slave_addr;
+#endif
+
 	if (!power_info || !sensor_i2c_client) {
 		pr_err("%s:%d failed: power_info %pK sensor_i2c_client %pK\n",
 			__func__, __LINE__, power_info, sensor_i2c_client);
@@ -197,6 +206,11 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	sensor_i2c_client = s_ctrl->sensor_i2c_client;
 	slave_info = s_ctrl->sensordata->slave_info;
 	sensor_name = s_ctrl->sensordata->sensor_name;
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get())
+		nokia_sdm439_sensor_addr_self = s_ctrl->sensordata->slave_info->sensor_slave_addr;
+#endif
 
 	if (!power_info || !sensor_i2c_client || !slave_info ||
 		!sensor_name) {
@@ -315,6 +329,21 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 	} else {
 		CDBG("No writes needed for this sensor before probe\n");
 	}
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		if (s_ctrl->id == CAMERA_2) {
+			CDBG("depth_sensor_name(%s)",s_ctrl->sensordata->sensor_name);
+			if (!gpio_get_value_cansleep(nokia_sdm439_depth_camera_id) && !strcmp(s_ctrl->sensordata->sensor_name,"gc2375_cxt")) {
+				CDBG("depth_camera_id(%d)",nokia_sdm439_depth_camera_id);
+			} else if (gpio_get_value_cansleep(nokia_sdm439_depth_camera_id) && !strcmp(s_ctrl->sensordata->sensor_name,"gc2375_lh")) {
+				CDBG("depth_camera_id(%d)",nokia_sdm439_depth_camera_id);
+			} else {
+				return -ENODEV;
+			}
+		}
+	}
+#endif
 
 	rc = sensor_i2c_client->i2c_func_tbl->i2c_read(
 		sensor_i2c_client, slave_info->sensor_id_reg_addr,

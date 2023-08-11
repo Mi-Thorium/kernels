@@ -1,0 +1,6 @@
+#ifndef _NOKIA_SDM439_CAMERA_VARS_H
+#define _NOKIA_SDM439_CAMERA_VARS_H
+extern unsigned nokia_sdm439_depth_camera_id;
+extern unsigned nokia_sdm439_rear_cam_avdd;
+extern uint16_t nokia_sdm439_sensor_addr_self;
+#endif
