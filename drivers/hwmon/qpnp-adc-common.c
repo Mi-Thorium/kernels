@@ -29,6 +29,10 @@
 #include <linux/interrupt.h>
 #include <linux/completion.h>
 #include <linux/qpnp/qpnp-adc.h>
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#include <nokia-sdm439/mach.h>
+#include "qpnp-adc-nokia-sdm439.h"
+#endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_MSM8937)
 #include <xiaomi-msm8937/mach.h>
 #endif
@@ -1487,10 +1491,31 @@ int32_t qpnp_adc_batt_therm_qrd(struct qpnp_vadc_chip *chip,
 							* 1000);
 		batt_thm_voltage = div64_s64(batt_thm_voltage,
 				adc_properties->full_scale_code * 1000);
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+		if (nokia_sdm439_mach_get() && nokia_sdm439_qg_check_type_of_battery(NOKIA_SDM439_BAT_TYPE_SUNWODA_3000MA))
+			qpnp_adc_map_voltage_temp(nokia_sdm439_adcmap_batt_therm_Sunwoda_3000ma,
+							ARRAY_SIZE(nokia_sdm439_adcmap_batt_therm_Sunwoda_3000ma),
+							batt_thm_voltage, &adc_chan_result->physical);
+		else if (nokia_sdm439_mach_get() && nokia_sdm439_qg_check_type_of_battery(NOKIA_SDM439_BAT_TYPE_SUNWODA_3000MA))
+			qpnp_adc_map_voltage_temp(nokia_sdm439_adcmap_batt_NCP15WF104F03RC_1_875V,
+							ARRAY_SIZE(nokia_sdm439_adcmap_batt_NCP15WF104F03RC_1_875V),
+							batt_thm_voltage, &adc_chan_result->physical);
+		else
+#endif
 		qpnp_adc_map_voltage_temp(adcmap_batt_therm_qrd,
 			ARRAY_SIZE(adcmap_batt_therm_qrd),
 			batt_thm_voltage, &adc_chan_result->physical);
 	}
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get() && !adc_properties->adc_hc) {
+		qpnp_adc_scale_with_calib_param(adc_code,
+			adc_properties, chan_properties, &batt_thm_voltage);
+		adc_chan_result->measurement = batt_thm_voltage;
+		qpnp_adc_map_voltage_temp(adcmap_batt_therm_qrd,
+			ARRAY_SIZE(adcmap_batt_therm_qrd),
+			batt_thm_voltage, &adc_chan_result->physical);
+	}
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(qpnp_adc_batt_therm_qrd);
@@ -1843,6 +1868,13 @@ int32_t qpnp_adc_scale_therm_pu2(struct qpnp_vadc_chip *chip,
 		therm_voltage = div64_s64(therm_voltage,
 				(adc_properties->full_scale_code * 1000));
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+		if (nokia_sdm439_mach_get())
+			qpnp_adc_map_voltage_temp(nokia_sdm439_adcmap_NCP15WF104F03RC_1_875V,
+									ARRAY_SIZE(nokia_sdm439_adcmap_NCP15WF104F03RC_1_875V),
+									therm_voltage, &adc_chan_result->physical);
+		else
+#endif
 		qpnp_adc_map_voltage_temp(adcmap_100k_104ef_104fb_1875_vref,
 			ARRAY_SIZE(adcmap_100k_104ef_104fb_1875_vref),
 			therm_voltage, &adc_chan_result->physical);
@@ -1853,6 +1885,13 @@ int32_t qpnp_adc_scale_therm_pu2(struct qpnp_vadc_chip *chip,
 		if (chan_properties->calib_type == CALIB_ABSOLUTE)
 			therm_voltage = div64_s64(therm_voltage, 1000);
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+		if (nokia_sdm439_mach_get())
+			qpnp_adc_map_voltage_temp(nokia_sdm439_adcmap_NCP15WF104F03RC,
+									ARRAY_SIZE(nokia_sdm439_adcmap_NCP15WF104F03RC),
+									therm_voltage, &adc_chan_result->physical);
+		else
+#endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_ROLEX)
 		if (xiaomi_msm8937_mach_get() == XIAOMI_MSM8937_MACH_ROLEX) {
 			qpnp_adc_map_voltage_temp(adcmap_100k_104ef_104fb_xiaomi_rolex,
@@ -1868,6 +1907,39 @@ int32_t qpnp_adc_scale_therm_pu2(struct qpnp_vadc_chip *chip,
 	return 0;
 }
 EXPORT_SYMBOL(qpnp_adc_scale_therm_pu2);
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+int32_t qpnp_adc_scale_nokia_sdm439_therm_572(struct qpnp_vadc_chip *chip,
+               int32_t adc_code,
+               const struct qpnp_adc_properties *adc_properties,
+               const struct qpnp_vadc_chan_properties *chan_properties,
+               struct qpnp_vadc_result *adc_chan_result)
+{
+	int64_t therm_voltage = 0;
+
+	if (!chan_properties || !chan_properties->offset_gain_numerator ||
+		!chan_properties->offset_gain_denominator || !adc_properties)
+		return -EINVAL;
+
+	if (!nokia_sdm439_mach_get()) {
+		pr_err("%s: Not supported on non Nokia SDM439 devices\n", __func__);
+		return -EINVAL;
+	}
+
+	qpnp_adc_scale_with_calib_param(adc_code,
+		adc_properties, chan_properties, &therm_voltage);
+
+	if (chan_properties->calib_type == CALIB_ABSOLUTE)
+		therm_voltage = div64_s64(therm_voltage, 1000);
+		/* ref_voltage=1.8v, skin-therm-adc, pa-therm0-adc, NTC: NCP15WF104F03RC */
+		qpnp_adc_map_voltage_temp(nokia_sdm439_adcmap_NCP15WF104F03RC_572,
+							ARRAY_SIZE(nokia_sdm439_adcmap_NCP15WF104F03RC_572),
+							therm_voltage, &adc_chan_result->physical);
+	//printk("[luojianhao][temp = %d][voltage = %d][%s][%d] \n", (int)adc_chan_result->physical, (int)therm_voltage, __func__, __LINE__);
+	return 0;
+}
+EXPORT_SYMBOL(qpnp_adc_scale_nokia_sdm439_therm_572);
+#endif
 
 int32_t qpnp_adc_tm_scale_voltage_therm_pu2(struct qpnp_vadc_chip *chip,
 		const struct qpnp_adc_properties *adc_properties,

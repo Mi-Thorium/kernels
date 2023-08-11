@@ -237,6 +237,9 @@ static struct qpnp_vadc_scale_fn vadc_scale_fn[] = {
 	[SCALE_BATT_THERM_TEMP_PU30] = {qpnp_adc_batt_therm_pu30},
 	[SCALE_BATT_THERM_TEMP_PU400] = {qpnp_adc_batt_therm_pu400},
 	[SCALE_BATT_THERM_TEMP_QRD_215] = {qpnp_adc_batt_therm_qrd_215}
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	,[SCALE_NOKIA_SDM439_THERM_100K_PULLUP_572] = {qpnp_adc_scale_nokia_sdm439_therm_572}
+#endif
 };
 
 static struct qpnp_vadc_rscale_fn adc_vadc_rscale_fn[] = {

@@ -438,8 +438,25 @@ enum qpnp_adc_scale_fn_type {
 	SCALE_BATT_THERM_TEMP_PU30,
 	SCALE_BATT_THERM_TEMP_PU400,
 	SCALE_BATT_THERM_TEMP_QRD_215,
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	SCALE_NOKIA_SDM439_THERM_100K_PULLUP_572,
+#endif
 	SCALE_NONE,
 };
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+/**
+ * These below are the definitions of the type of batteries.
+ * TYPE_JIADE_XXX, means its manufacture is JIADE.
+ * TYPE_SUNWODA_XXX, means its manufacture is SUNWODA.
+ */
+enum nokia_sdm439_qpnp_type_of_battery {
+	NOKIA_SDM439_BAT_TYPE_SUNWODA_3000MA = 51, /* The value is its bat_id_ohm. */
+	NOKIA_SDM439_BAT_TYPE_JIADE_3000MA = 200,
+	NOKIA_SDM439_BAT_TYPE_UNKNOWN,
+};
+extern int nokia_sdm439_qg_check_type_of_battery(int ref_id_ohm);
+#endif
 
 /**
  * enum qpnp_adc_tm_rscale_fn_type - Scaling function used to convert the
@@ -1792,6 +1809,26 @@ int32_t qpnp_adc_scale_therm_pu2(struct qpnp_vadc_chip *dev, int32_t adc_code,
 			const struct qpnp_adc_properties *adc_prop,
 			const struct qpnp_vadc_chan_properties *chan_prop,
 			struct qpnp_vadc_result *chan_rslt);
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+/**
+ * qpnp_adc_scale_nokia_sdm439_therm_572() - Scales the pre-calibrated digital output
+ *             of an ADC to the ADC reference and compensates for the
+ *             gain and offset. Returns the temperature of the therm in degC.
+ *             It uses a mapping table computed for a 100K pull-up.
+ *             Pull-up2 is an internal pull-up on the AMUX of 100K.
+ * @dev:       Structure device for qpnp vadc
+ * @adc_code:  pre-calibrated digital output of the ADC.
+ * @adc_prop:  adc properties of the pm8xxx adc such as bit resolution,
+ *             reference voltage.
+ * @chan_prop: individual channel properties to compensate the i/p scaling,
+ *             slope and offset.
+ * @chan_rslt: physical result to be stored.
+ */
+int32_t qpnp_adc_scale_nokia_sdm439_therm_572(struct qpnp_vadc_chip *dev, int32_t adc_code,
+                       const struct qpnp_adc_properties *adc_prop,
+                       const struct qpnp_vadc_chan_properties *chan_prop,
+                       struct qpnp_vadc_result *chan_rslt);
+#endif
 /**
  * qpnp_adc_scale_therm_ncp03() - Scales the pre-calibrated digital output
  *		of an ADC to the ADC reference and compensates for the
@@ -2300,6 +2337,14 @@ static inline int32_t qpnp_adc_scale_therm_pu2(struct qpnp_vadc_chip *vadc,
 			const struct qpnp_vadc_chan_properties *chan_prop,
 			struct qpnp_vadc_result *chan_rslt)
 { return -ENXIO; }
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+static inline int32_t qpnp_adc_scale_nokia_sdm439_therm_572(struct qpnp_vadc_chip *vadc,
+                       int32_t adc_code,
+                       const struct qpnp_adc_properties *adc_prop,
+                       const struct qpnp_vadc_chan_properties *chan_prop,
+                       struct qpnp_vadc_result *chan_rslt)
+{ return -ENXIO; }
+#endif
 static inline int32_t qpnp_adc_scale_therm_ncp03(struct qpnp_vadc_chip *vadc,
 			int32_t adc_code,
 			const struct qpnp_adc_properties *adc_prop,
