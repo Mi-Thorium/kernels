@@ -29,6 +29,9 @@
 #include <linux/pm_qos.h>
 #include <linux/mdss_io_util.h>
 #include <linux/dma-buf.h>
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#include <nokia-sdm439/mach.h>
+#endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_MSM8937)
 #include <xiaomi-msm8937/mach.h>
 #endif
@@ -410,12 +413,23 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 	if (mdss_dsi_pinctrl_set_state(ctrl_pdata, false))
 		pr_debug("reset disable: pinctrl not enabled\n");
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get())
+		msleep(120);
+#endif
+
 	ret = msm_mdss_enable_vreg(
 		ctrl_pdata->panel_power_data.vreg_config,
 		ctrl_pdata->panel_power_data.num_vreg, 0);
 	if (ret)
 		pr_err("%s: failed to disable vregs for %s\n",
 			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+// TODO
+//	if (nokia_sdm439_mach_get())
+//		ocp2131_set_voltage(0,0);
+#endif
 
 end:
 	return ret;
@@ -443,6 +457,19 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 					__func__);
 	}
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		if (strcmp(pdata->panel_info.panel_name, "ili9881d video mode dsi led panel") == 0)
+			msleep(2);
+#if IS_ENABLED(CONFIG_MACH_NOKIA_DEADPOOL)
+		if (nokia_sdm439_mach_get() == NOKIA_SDM439_MACH_DEADPOOL && (
+				strcmp(pdata->panel_info.panel_name, "st7703 video mode dsi ski panel") == 0 ||
+				strcmp(pdata->panel_info.panel_name, "st7703 video mode dsi txd panel") == 0))
+			goto nokia_deadpool_skip_for_st7703_panel;
+#endif
+	}
+#endif
+
 	ret = msm_mdss_enable_vreg(
 		ctrl_pdata->panel_power_data.vreg_config,
 		ctrl_pdata->panel_power_data.num_vreg, 1);
@@ -451,6 +478,15 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
 		return ret;
 	}
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+// TODO
+//	if (nokia_sdm439_mach_get())
+//		ocp2131_set_voltage(LCM_LDO_VOL_6V0,LCM_LDO_VOL_6V0);
+#if IS_ENABLED(CONFIG_MACH_NOKIA_DEADPOOL)
+nokia_deadpool_skip_for_st7703_panel:
+#endif
+#endif
 
 	/*
 	 * If continuous splash screen feature is enabled, then we need to
@@ -468,6 +504,24 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 			pr_err("%s: Panel reset failed. rc=%d\n",
 					__func__, ret);
 	}
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_DEADPOOL)
+	if (nokia_sdm439_mach_get() == NOKIA_SDM439_MACH_DEADPOOL && (
+			strcmp(pdata->panel_info.panel_name, "st7703 video mode dsi ski panel") == 0 ||
+			strcmp(pdata->panel_info.panel_name, "st7703 video mode dsi txd panel") == 0)) {
+		msleep(10);
+
+		// Copy of above code
+		ret = msm_mdss_enable_vreg(
+			ctrl_pdata->panel_power_data.vreg_config,
+			ctrl_pdata->panel_power_data.num_vreg, 1);
+		if (ret) {
+			pr_err("%s: failed to enable vregs for %s\n",
+				__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
+			return ret;
+		}
+	}
+#endif
 
 #if IS_ENABLED(CONFIG_MACH_FAMILY_XIAOMI_ULYSSE)
 	if (xiaomi_msm8937_mach_get_family() == XIAOMI_MSM8937_MACH_FAMILY_ULYSSE) {
