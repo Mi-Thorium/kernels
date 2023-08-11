@@ -9,6 +9,7 @@ config TECHPACK_AUDIO_DISABLE
 
 source "techpack/camera-legacy/Kconfig"
 source "techpack/camera-legacy-m/Kconfig"
+source "techpack/nokia-sdm439/Kconfig"
 source "techpack/xiaomi-msm8937/Kconfig"
 source "techpack/xiaomi-sdm439/Kconfig"
 
