@@ -2,10 +2,14 @@
 */*
 !/audio/*
 !/stub/*
-# Xiaomi MSM8937
+# MSM8937
 /audio-legacy
 /camera-legacy*
+# Nokia SDM439
+/nokia-sdm439
+# Xiaomi MSM8937
 /xiaomi-msm8937
+# Xiaomi SDM439
 /xiaomi-sdm439
 # Mods
 /KernelSU
