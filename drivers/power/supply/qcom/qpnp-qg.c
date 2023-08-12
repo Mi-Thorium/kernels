@@ -31,6 +31,9 @@
 #include <linux/qpnp/qpnp-adc.h>
 #include <uapi/linux/qg.h>
 #include <uapi/linux/qg-profile.h>
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#include <nokia-sdm439/mach.h>
+#endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_SDM439)
 #include <xiaomi-sdm439/mach.h>
 #endif
@@ -42,6 +45,11 @@
 #include "qg-soc.h"
 #include "qg-battery-profile.h"
 #include "qg-defs.h"
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+static int nokia_sdm439_bat_id_ohm = -1;
+static char nokia_sdm439_bat_id_str[50] = {'\0'};
+#endif
 
 #if IS_ENABLED(CONFIG_MACH_FAMILY_XIAOMI_PINE)
 #define XIAOMI_PINE_SUNWODA_ID_MAX 82000
@@ -2710,8 +2718,37 @@ static int qg_setup_battery(struct qpnp_qg *chip)
 			chip->battery_missing, chip->batt_id_ohm,
 			chip->profile_loaded, chip->bp.batt_type_str);
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		/* It assumes that we've got a qualified battery. */
+		if (chip->profile_loaded) {
+			nokia_sdm439_bat_id_ohm = (chip->batt_id_ohm) / 1000;
+			strcpy(nokia_sdm439_bat_id_str, chip->bp.batt_type_str);
+		} else {
+			nokia_sdm439_bat_id_ohm = -1;
+			strcpy(nokia_sdm439_bat_id_str, "NA"); // Battery Missing or Not Qualified Battery.
+		}
+	}
+#endif
+
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+int nokia_sdm439_qg_check_type_of_battery(int ref_id_ohm)
+{
+    int delta = abs(ref_id_ohm - nokia_sdm439_bat_id_ohm);
+    int limit = (ref_id_ohm * 15) / 100; // 15% is the deviation.
+    int in_range = (delta <= limit);
+    return in_range;
+}
+EXPORT_SYMBOL(nokia_sdm439_qg_check_type_of_battery);
+bool nokia_sdm439_isBatteryVaild(void)
+{
+	return (nokia_sdm439_bat_id_ohm == -1 ? 0 : 1);
+}
+EXPORT_SYMBOL(nokia_sdm439_isBatteryVaild);
+#endif
 
 static struct ocv_all ocv[] = {
 	[S7_PON_OCV] = { 0, 0, "S7_PON_OCV"},
@@ -2875,6 +2912,16 @@ done:
 		pr_err("Failed to get %s @ PON, rc=%d\n", ocv_type, rc);
 		return rc;
 	}
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		if (abs(soc - shutdown[SDAM_SOC]) <= 10) {
+			ocv_uv = shutdown[SDAM_OCV_UV];
+			soc = shutdown[SDAM_SOC];
+			qg_dbg(chip, QG_DEBUG_PON, "WT Using SHUTDOWN_SOC @ PON\n");
+		}
+	}
+#endif
 
 	chip->last_adj_ssoc = chip->catch_up_soc = chip->msoc = soc;
 	chip->kdata.param[QG_PON_OCV_UV].data = ocv_uv;

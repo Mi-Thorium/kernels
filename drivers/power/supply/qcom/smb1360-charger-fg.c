@@ -33,6 +33,13 @@
 #include <linux/pm_wakeup.h>
 #include <linux/of_irq.h>
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#include <linux/alarmtimer.h>
+#include <linux/display_state.h>
+#include <linux/thermal.h>
+#include <nokia-sdm439/mach.h>
+#endif
+
 #define _SMB1360_MASK(BITS, POS) \
 	((unsigned char)(((1 << (BITS)) - 1) << (POS)))
 #define SMB1360_MASK(LEFT_BIT_POS, RIGHT_BIT_POS) \
@@ -254,6 +261,25 @@
 #define SMB1360_POWERON_DELAY_MS	2000
 #define SMB1360_FG_RESET_DELAY_MS	1500
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#define NOKIA_SDM439_FCC_MAX_MA	3000000
+#define NOKIA_SDM439_FCC_2800_MA	2800000
+#define NOKIA_SDM439_FCC_2600_MA	2600000
+#define NOKIA_SDM439_FCC_2400_MA	2400000
+#define NOKIA_SDM439_FCC_2200_MA	2200000
+#define NOKIA_SDM439_FCC_2000_MA	2000000
+#define NOKIA_SDM439_FCC_1800_MA	1800000
+#define NOKIA_SDM439_FCC_1600_MA	1600000
+#define NOKIA_SDM439_FCC_1500_MA	1500000
+#define NOKIA_SDM439_FCC_1400_MA	1400000
+#define NOKIA_SDM439_FCC_1200_MA	1200000
+#define NOKIA_SDM439_FCC_1000_MA	1000000
+#define NOKIA_SDM439_FCC_800_MA	800000
+#define NOKIA_SDM439_FCC_500_MA	500000
+#define NOKIA_SDM439_FCC_0_MA	0
+#define NOKIA_SDM439_SMB1360_CLOSE_OPEN   1
+#endif
+
 enum {
 	WRKRND_FG_CONFIG_FAIL = BIT(0),
 	WRKRND_BATT_DET_FAIL = BIT(1),
@@ -469,6 +495,16 @@ struct smb1360_chip {
 	int				hot_hysteresis;
 	struct extcon_dev		*extcon;
 	int				usb_id_irq;
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	struct delayed_work	nokia_sdm439_chg_info_log_work;
+	int nokia_sdm439_current_flag;
+	int nokia_sdm439_capacity;
+	int nokia_sdm439_batt_fake_temp;
+	int nokia_sdm439_batt_flg_capacity;
+	int nokia_sdm439_batt_flg_capacity_now;
+	int nokia_sdm439_batt_flg_capacity_num;
+#endif
 };
 
 static int chg_time[] = {
@@ -950,6 +986,10 @@ static void smb1360_otp_backup_pool_init(struct smb1360_chip *chip)
 	struct otp_backup_pool *pool = &chip->otp_backup;
 
 	pool->reg_start = 0xE0;
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get())
+		pool->reg_start = 0xE8;
+#endif
 	pool->reg_end = 0xEF;
 	pool->start_now = pool->reg_start;
 	mutex_init(&pool->lock);
@@ -1232,6 +1272,41 @@ static int smb1360_get_prop_batt_health(struct smb1360_chip *chip)
 	return ret.intval;
 }
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#define NOKIA_SDM439_CAPACITY_CYCLE_TIME	7		// 1: 10s
+#define NOKIA_SDM439_CAPACITY_NOT_CYCLE	96
+#define NOKIA_SDM439_CAPACITY_NOT_CYCLE_TWO	99
+static void nokia_sdm439_smb1360_full_delay_batt_capacity(struct smb1360_chip *chip)
+{
+	if((chip->batt_full == true) && (chip->usb_present == true)){		// keep 100%  charge during charging
+		chip->nokia_sdm439_batt_flg_capacity = NOKIA_SDM439_CAPACITY_CYCLE_TIME;		// first cycle
+		chip->nokia_sdm439_batt_flg_capacity_num = 0;
+		return ;
+	}
+#if NOKIA_SDM439_SMB1360_CLOSE_OPEN
+		if(chip->usb_present == false || chip->nokia_sdm439_batt_flg_capacity_now < NOKIA_SDM439_CAPACITY_NOT_CYCLE)
+			chip->nokia_sdm439_batt_flg_capacity = 0;
+#else
+	{
+		int temp_capacity_value = 0;
+		if(chip->nokia_sdm439_batt_flg_capacity_now >= NOKIA_SDM439_CAPACITY_NOT_CYCLE && chip->nokia_sdm439_batt_flg_capacity_now <= NOKIA_SDM439_CAPACITY_NOT_CYCLE_TWO){
+			if(chip->nokia_sdm439_batt_flg_capacity == 1){		// cycle:start
+				temp_capacity_value = (100 - chip->nokia_sdm439_batt_flg_capacity_num) - chip->nokia_sdm439_batt_flg_capacity_now;	// record actual power and current display difference
+				chip->nokia_sdm439_batt_flg_capacity_num++;		//used record: current display
+				if(temp_capacity_value > 0)
+					chip->nokia_sdm439_batt_flg_capacity = NOKIA_SDM439_CAPACITY_CYCLE_TIME;
+			}
+
+			if(chip->nokia_sdm439_batt_flg_capacity > 0)		// cycle :timekeeping
+				chip->nokia_sdm439_batt_flg_capacity--;
+		}else{
+			chip->nokia_sdm439_batt_flg_capacity = 0;
+		}
+	}
+#endif
+}
+#endif
+
 static int smb1360_get_prop_batt_capacity(struct smb1360_chip *chip)
 {
 	u8 reg;
@@ -1288,8 +1363,51 @@ static int smb1360_get_prop_chg_full_design(struct smb1360_chip *chip)
 
 	chip->fcc_mah = fcc_mah * 1000;
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		chip->nokia_sdm439_batt_flg_capacity_now = chip->soc_now;
+#if NOKIA_SDM439_SMB1360_CLOSE_OPEN
+		if(chip->nokia_sdm439_batt_flg_capacity > 0)
+			chip->soc_now = 100;
+#else
+		if(chip->nokia_sdm439_batt_flg_capacity > 0)
+			chip->soc_now = 100 - chip->nokia_sdm439_batt_flg_capacity_num;
+#endif
+	}
+#endif
+
 	return chip->fcc_mah;
 }
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+static int nokia_sdm439_smb1360_temp_compensate(int temp)
+{
+	int temp_compensate = -1;
+	#if 1		//0x85B8
+	if(temp <= -120)						// temp <= -12
+		temp_compensate = temp - 30;
+	else if(temp <= -70)				// -7 =< temp <= -12
+		temp_compensate = temp - 20;
+	else if(temp >=420)					//temp >= 42
+		temp_compensate = temp - 20;
+	else								// -7 < temp < 42
+		temp_compensate = temp;
+	#else		//0x86DB
+	if(temp <= 120)						// temp <= 12
+		temp_compensate = temp + 40;
+	else if(temp <= 180)				// 12 < temp <= 18
+		temp_compensate = temp + 20;
+	else if(temp >=380)					//temp >= 38
+		temp_compensate = temp - 40;
+	else if(temp >= 290)				// 29 <= temp < 38
+		temp_compensate = temp - 20;
+	else								// 18 < temp < 29
+		temp_compensate = temp;
+	#endif			
+
+	return temp_compensate;
+}
+#endif
 
 static int smb1360_get_prop_batt_temp(struct smb1360_chip *chip)
 {
@@ -1313,6 +1431,11 @@ static int smb1360_get_prop_batt_temp(struct smb1360_chip *chip)
 					reg[0], reg[1], temp);
 
 	chip->temp_now = temp;
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get())
+		chip->temp_now = nokia_sdm439_smb1360_temp_compensate(temp);
+#endif
 
 	return chip->temp_now;
 }
@@ -1390,6 +1513,14 @@ static int smb1360_get_prop_current_now(struct smb1360_chip *chip)
 				reg[0], reg[1], temp * 1000);
 
 	chip->current_now = temp * 1000;
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		chip->current_now = temp * 953;
+		if(chip->current_now < 200000)
+			chip->current_now = chip->current_now + 3000;
+	}
+#endif
 
 	return chip->current_now;
 }
@@ -1643,6 +1774,11 @@ static int smb1360_set_appropriate_usb_current(struct smb1360_chip *chip)
 		}
 
 		chip->fastchg_current = fastchg_current[i];
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+		if (nokia_sdm439_mach_get())
+			chip->nokia_sdm439_current_flag = 100;
+#endif
 
 		/* set fastchg limit */
 		rc = smb1360_masked_write(chip, CHG_CURRENT_REG,
@@ -3474,6 +3610,80 @@ static int smb1360_regulator_init(struct smb1360_chip *chip)
 	return rc;
 }
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+static int nokia_sdm439_smb1360_otp_rslow_cfg(struct smb1360_chip *chip ,int val)
+{
+	int rc, i;
+	u8 address, data;
+	u8 reg_val_mapping_standalone[][2] = {
+		{0xE0, 0x54},
+		{0xE1, 0x85},
+		{0xE2, 0x55},
+		{0xE3, 0x6A},
+		{0xE4, 0x56},
+		{0xE5, 0x9C},
+		{0xE6, 0x57},
+		{0xE7, 0x69},
+		{0xF0, 0xAA},
+		{0xF1, 0x00},
+	};
+	u8 reg_val_mapping_w_rsense[][2] = {
+		{0xE0, 0x54},
+		{0xE1, 0x85},
+		{0xE2, 0x55},
+		{0xE3, 0x6A},
+		{0xE4, 0x56},
+		{0xE5, 0x9C},
+		{0xE6, 0x57},
+		{0xE7, 0x69},
+		{0xF0, 0xFF},
+		{0xF1, 0x00},
+	};
+
+   rc = smb1360_enable_fg_access(chip);
+   if (rc) {
+        pr_err("Couldn't request FG access rc = %d\n", rc);
+        return rc;
+   }
+   chip->fg_access_type = FG_ACCESS_CFG;
+   rc = smb1360_select_fg_i2c_address(chip);
+   if (rc) {
+        pr_err("Unable to set FG access I2C address\n");
+        goto restore_fg;
+   }
+
+	for (i = 0; i < ARRAY_SIZE(reg_val_mapping_standalone); i++) {
+		if (val==2) {
+			address = reg_val_mapping_w_rsense[i][0];
+			data = reg_val_mapping_w_rsense[i][1];
+		} else {
+			address = reg_val_mapping_standalone[i][0];
+			data = reg_val_mapping_standalone[i][1];
+		}
+		pr_debug("Writing reg_add=%x value=%x\n", address, data);
+
+		rc = smb1360_fg_write(chip, address, data);
+		if (rc) {
+			pr_err("Write fg address 0x%x failed, rc = %d\n", address, rc);
+			return rc;
+		}
+	}
+	rc = smb1360_masked_write(chip, CFG_FG_BATT_CTRL_REG,CFG_FG_OTP_BACK_UP_ENABLE, CFG_FG_OTP_BACK_UP_ENABLE);
+     if (rc) {
+          pr_err("Write reg 0x0E failed, rc = %d\n", rc);
+          goto restore_fg;
+          }
+
+   restore_fg:
+         rc = smb1360_disable_fg_access(chip);
+          if (rc) {
+          pr_err("Couldn't disable FG access rc = %d\n", rc);
+          return rc;
+          }
+	return 0;
+}
+#endif
+
 static int smb1360_check_batt_profile(struct smb1360_chip *chip)
 {
 	int rc, i, timeout = 50;
@@ -3529,6 +3739,24 @@ static int smb1360_check_batt_profile(struct smb1360_chip *chip)
 		pr_err("Couldn't reset battery-profile rc=%d\n", rc);
 		return rc;
 	}
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		if (new_profile == BATTERY_PROFILE_A) {
+			rc = nokia_sdm439_smb1360_otp_rslow_cfg(chip, 1);
+			if (rc) {
+				pr_err("Unable configure OTP for rlsow rc=%d\n", rc);
+				return 0;
+			}
+		} else if (new_profile == BATTERY_PROFILE_B) {
+			rc = nokia_sdm439_smb1360_otp_rslow_cfg(chip, 2);
+			if (rc) {
+				pr_err("Unable configure OTP for rlsow rc=%d\n", rc);
+				return 0;
+			}
+		}
+	}
+#endif
 
 	rc = smb1360_enable_fg_access(chip);
 	if (rc) {
@@ -4515,6 +4743,35 @@ static void smb1360_delayed_init_work_fn(struct work_struct *work)
 	}
 }
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+/***************
+ * Work Queues *
+ ***************/
+static int nokia_sdm439_smb1360_charge_check_therm(struct smb1360_chip *chip);	
+#define NOKIA_SDM439_LOW_SOC_INTERVAL_MS 10000
+#define NOKIA_SDM439_NORMAL_INTERVAL_MS 15000
+static void nokia_sdm439_smblib_chg_info_log_work(struct work_struct *work)
+{
+	struct smb1360_chip *chg = container_of(work, struct smb1360_chip,
+						nokia_sdm439_chg_info_log_work.work);
+	int interval_time = 500;
+	if(chg==NULL) {
+		pr_err("pmic fatal error:chg=null\n!!");
+		return;
+	}
+
+	nokia_sdm439_smb1360_full_delay_batt_capacity(chg);
+	nokia_sdm439_smb1360_charge_check_therm(chg);	
+	if (chg->nokia_sdm439_capacity <= 5)
+		interval_time = NOKIA_SDM439_LOW_SOC_INTERVAL_MS;
+	else
+		interval_time = NOKIA_SDM439_NORMAL_INTERVAL_MS;
+
+	schedule_delayed_work(&chg->nokia_sdm439_chg_info_log_work,
+				      round_jiffies_relative(msecs_to_jiffies(interval_time)));
+}
+#endif
+
 static int smb_parse_batt_id(struct smb1360_chip *chip)
 {
 	int rc = 0, rpull = 0, vref = 0;
@@ -4586,6 +4843,130 @@ static int smb_parse_batt_id(struct smb1360_chip *chip)
 
 	return 0;
 }
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#define NOKIA_SDM439_BATT_HOT_TEMP 600
+#define NOKIA_SDM439_BATT_COLD_TEMP 0
+#define NOKIA_SDM439_BATT_LOW_TEMP 150
+#define NOKIA_SDM439_BOARD_WARM_TEMP 430
+#define NOKIA_SDM439_NOKIA_SDM439_BOARD_WARM_TEMP_2 450
+#define NOKIA_SDM439_BOARD_HOT_TEMP 590
+#define NOKIA_SDM439_BATT_MAX_VOLTAGE_UNDER_HOT 4100000
+
+#define NOKIA_SDM439_SMB1360_FCC_450_MA	0
+#define NOKIA_SDM439_SMB1360_FCC_600_MA	1
+#define NOKIA_SDM439_SMB1360_FCC_750_MA	2
+#define NOKIA_SDM439_SMB1360_FCC_900_MA	3
+#define NOKIA_SDM439_SMB1360_FCC_1050_MA	4
+#define NOKIA_SDM439_SMB1360_FCC_1500_MA	7
+#define NOKIA_SDM439_SMB1360_DISABLE_CHARGE	60
+
+#define NOKIA_SDM439_SMB1360_NO_CHANGE_FLAG	100
+
+static int nokia_sdm439_show_Board_temp_Test(struct smb1360_chip *chip)	
+{
+	struct thermal_zone_device *thermal_dev;
+	int board_temp = -1;
+	int ret = -1;
+
+	thermal_dev = thermal_zone_get_zone_by_name("pa-therm0-adc");
+	if (thermal_dev == NULL) {
+		pr_err("Joshua: Couldn't get sdm-therm conn_thermtz\n");
+		return ret;
+	}
+
+	ret = thermal_zone_get_temp(thermal_dev, &board_temp);
+	if(ret) {
+		pr_err("Joshua: Couldn't get board temp, rc=%d\n", ret);
+		return ret;
+	}
+
+	return board_temp/100;
+}
+static int nokia_sdm439_smb1360_change_check_therm(struct smb1360_chip *chip)
+{
+	int i = 0;
+	int board_temp = -1, batt_temp = -1, voltage_now = -1;;
+
+	board_temp = nokia_sdm439_show_Board_temp_Test(chip);
+	batt_temp = smb1360_get_prop_batt_temp(chip);
+
+	voltage_now = smb1360_get_prop_voltage_now(chip);
+	if(voltage_now < 0){
+		voltage_now = chip->voltage_now;
+		pr_err("err:get voltage failed\n");
+	}
+	/* USB AC */
+	if(batt_temp >= NOKIA_SDM439_BATT_HOT_TEMP || board_temp >= NOKIA_SDM439_BOARD_HOT_TEMP || batt_temp < NOKIA_SDM439_BATT_COLD_TEMP){	// batt_temp >=60 || batt_temp < 0 || board_temp >= 590
+		i = NOKIA_SDM439_SMB1360_DISABLE_CHARGE;		// used disable charge
+	}else if(batt_temp >= NOKIA_SDM439_BATT_COLD_TEMP && batt_temp < NOKIA_SDM439_BATT_LOW_TEMP)	// 0 - 15
+		i = NOKIA_SDM439_SMB1360_FCC_600_MA;		// 600mA
+	else if(batt_temp >= NOKIA_SDM439_BATT_LOW_TEMP && batt_temp < NOKIA_SDM439_BATT_HOT_TEMP){	// 15 - 60
+		if(is_display_on() && board_temp >= NOKIA_SDM439_BOARD_WARM_TEMP)		// lcd on && board_temp >= 43
+			i = NOKIA_SDM439_SMB1360_FCC_900_MA;	// 900mA
+		else
+			i = NOKIA_SDM439_SMB1360_FCC_1050_MA;	//1050mA
+	}else{
+		i = NOKIA_SDM439_SMB1360_FCC_1050_MA;
+	}
+
+	if(batt_temp >= NOKIA_SDM439_NOKIA_SDM439_BOARD_WARM_TEMP_2 && voltage_now > NOKIA_SDM439_BATT_MAX_VOLTAGE_UNDER_HOT)	// batt_temp >=45 && voltage > 4.1V
+		i = NOKIA_SDM439_SMB1360_DISABLE_CHARGE;		// used disable charge
+
+	if(i == chip->nokia_sdm439_current_flag){
+		i = NOKIA_SDM439_SMB1360_NO_CHANGE_FLAG;
+	}else{
+		chip->nokia_sdm439_current_flag = i;
+	}
+	return i;
+}
+
+static int nokia_sdm439_smb1360_charge_check_therm(struct smb1360_chip *chip)
+{
+	int rc = 0, i = 0;
+
+	if (!chip->batt_present) {
+	pr_debug("ignoring current request since battery is absent\n");
+	return 0;
+	}
+
+	i = nokia_sdm439_smb1360_change_check_therm(chip);
+	if(NOKIA_SDM439_SMB1360_DISABLE_CHARGE == i){
+		rc = smb1360_charging_disable(chip, USER, !chip->charging_disabled);
+			if (rc)
+				pr_err("Couldn't disable  charging rc = %d",rc);
+	}else if(NOKIA_SDM439_SMB1360_NO_CHANGE_FLAG != i){
+		rc = smb1360_charging_disable(chip, USER, !!chip->charging_disabled);
+		if (rc)
+			pr_err("Couldn't enable  charging rc = %d",rc);
+
+		chip->fastchg_current = fastchg_current[i];
+		/* set fastchg limit */
+		rc = smb1360_masked_write(chip, CHG_CURRENT_REG,
+			FASTCHG_CURR_MASK, i << FASTCHG_CURR_SHIFT);
+		if (rc)
+			pr_err("Couldn't set fastchg mA rc=%d\n", rc);
+
+		/*
+		 * To move to a new (higher) input-current setting,
+		 * first set USB500 and then USBAC. This makes sure
+		 * that the new ICL setting takes affect.
+		 */
+		rc = smb1360_masked_write(chip, CMD_IL_REG,
+				USB_CTRL_MASK, USB_500_BIT);
+		if (rc)
+			pr_err("Couldn't configure for USB500 rc=%d\n", rc);
+
+		rc = smb1360_masked_write(chip, CMD_IL_REG,
+				USB_CTRL_MASK, USB_AC_BIT);
+		if (rc)
+			pr_err("Couldn't configure for USB AC rc=%d\n", rc);
+
+		pr_debug("fast-chg current set to = %d\n", fastchg_current[i]);
+	}
+	return rc;
+}
+#endif
 
 /*
  * Note the below:
@@ -4724,6 +5105,12 @@ static int smb1360_parse_jeita_params(struct smb1360_chip *chip)
 							rc);
 			return rc;
 		}
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+		if (nokia_sdm439_mach_get()) {
+			chip->cool_bat_decidegc = 10; // COOL_SMB1360_TEST
+			chip->warm_bat_decidegc = 590; // WARM_SMB1360_TEST
+		}
+#endif
 	}
 
 	pr_debug("soft-jeita-enabled = %d, warm-bat-decidegc = %d, cool-bat-decidegc = %d, cool-bat-mv = %d, warm-bat-mv = %d, cool-bat-ma = %d, warm-bat-ma = %d\n",
@@ -5023,6 +5410,10 @@ static int smb1360_probe(struct i2c_client *client,
 	INIT_DELAYED_WORK(&chip->jeita_work, smb1360_jeita_work_fn);
 	INIT_DELAYED_WORK(&chip->delayed_init_work,
 			smb1360_delayed_init_work_fn);
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get())
+		INIT_DELAYED_WORK(&chip->nokia_sdm439_chg_info_log_work, nokia_sdm439_smblib_chg_info_log_work);
+#endif
 	init_completion(&chip->fg_mem_access_granted);
 	smb1360_wakeup_src_init(chip);
 
@@ -5113,6 +5504,16 @@ static int smb1360_probe(struct i2c_client *client,
 				PTR_ERR(chip->batt_psy));
 		goto unregister_batt_psy;
 	}
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		chip->nokia_sdm439_capacity = -EINVAL;
+		chip->nokia_sdm439_batt_fake_temp = -EINVAL;
+
+		schedule_delayed_work(&chip->nokia_sdm439_chg_info_log_work,
+				round_jiffies_relative(msecs_to_jiffies(NOKIA_SDM439_NORMAL_INTERVAL_MS)));
+	}
+#endif
 
 	/* STAT irq configuration */
 	if (client->irq) {

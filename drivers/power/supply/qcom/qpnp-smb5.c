@@ -26,6 +26,9 @@
 #include <linux/regulator/machine.h>
 #include <linux/pmic-voter.h>
 #include <linux/qpnp/qpnp-adc.h>
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#include <nokia-sdm439/mach.h>
+#endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_SDM439)
 #include <xiaomi-sdm439/mach.h>
 #endif
@@ -440,6 +443,14 @@ static int smb5_parse_dt(struct smb5 *chip)
 
 	rc = of_property_read_u32(node, "qcom,chg-term-current-ma",
 			&chip->dt.term_current_thresh_hi_ma);
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get() != NOKIA_SDM439_MACH_UNKNOWN &&
+			nokia_sdm439_mach_get() != NOKIA_SDM439_MACH_DEADPOOL) {
+		/* It ought to be a negative number. */
+		chip->dt.term_current_thresh_hi_ma = -1 * chip->dt.term_current_thresh_hi_ma;
+	}
+#endif
 
 	if (chip->dt.term_current_src == ITERM_SRC_ADC)
 		rc = of_property_read_u32(node, "qcom,chg-term-base-current-ma",
@@ -1902,9 +1913,21 @@ static int smb5_configure_mitigation(struct smb_charger *chg)
 
 	if (chg->hw_connector_mitigation) {
 		chan |= CONN_THM_CHANNEL_EN_BIT;
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+		if (nokia_sdm439_mach_get())
+			pr_debug("%s: %d skip\n", __func__, __LINE__);
+		else
+#endif
 		src_cfg |= THERMREG_CONNECTOR_ADC_SRC_EN_BIT;
 	}
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get())
+	rc = smblib_masked_write(chg, MISC_THERMREG_SRC_CFG_REG,
+			THERMREG_SW_ICL_ADJUST_BIT | THERMREG_DIE_ADC_SRC_EN_BIT
+			| THERMREG_DIE_CMP_SRC_EN_BIT, src_cfg);
+	else
+#endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_SDM439)
 	if (xiaomi_sdm439_mach_get())
 	rc = smblib_masked_write(chg, MISC_THERMREG_SRC_CFG_REG,
@@ -2213,6 +2236,17 @@ static int smb5_init_hw(struct smb5 *chip)
 			return rc;
 		}
 	}
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		rc = smblib_masked_write(chg, USBIN_AICL_OPTIONS_CFG_REG,
+				USBIN_AICL_ADC_EN_BIT | BIT(4), 0x10); // BIT(4) is USBIN_AICL_PERIODIC_RERUN_EN_BIT
+		if (rc < 0) {
+			dev_err(chg->dev, "Couldn't config AICL rc=%d\n", rc);
+			return rc;
+		}
+	}
+#endif
 
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_SDM439)
 	if (xiaomi_sdm439_mach_get()) {
@@ -2986,6 +3020,11 @@ static int smb5_probe(struct platform_device *pdev)
 	struct smb_charger *chg;
 	int rc = 0;
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get())
+		override_smb5_lib_h_values_for_nokia_sdm439();
+#endif
+
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_SDM439)
 	if (xiaomi_sdm439_mach_get()) {
 		pmi632_max_icl_ua = 2000000;
@@ -3018,6 +3057,19 @@ static int smb5_probe(struct platform_device *pdev)
 		pr_err("parent regmap is missing\n");
 		return -EINVAL;
 	}
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		chg->vadc_dev = qpnp_get_vadc(chg->dev, "chg");
+		chg->nokia_sdm439_board_temp_vadc_dev = chg->vadc_dev;
+		if (IS_ERR(chg->nokia_sdm439_board_temp_vadc_dev)) {
+			rc = PTR_ERR(chg->nokia_sdm439_board_temp_vadc_dev);
+			if (rc != -EPROBE_DEFER)
+				pr_err("[WT] Failed to find VADC node, rc=%d\n", rc);
+			return rc;
+		}
+	}
+#endif
 
 	rc = smb5_chg_config_init(chip);
 	if (rc < 0) {

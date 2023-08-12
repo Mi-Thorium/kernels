@@ -19,6 +19,9 @@
 #include <linux/regulator/consumer.h>
 #include <linux/extcon.h>
 #include <linux/alarmtimer.h>
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+#include <nokia-sdm439/mach.h>
+#endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_SDM439)
 #include <xiaomi-sdm439/mach.h>
 #endif
@@ -104,6 +107,19 @@ static int typec_high_current_ua = 3000000;
 #define XIAOMI_SDM439_SMBCHG_UPDATE_MS		1000
 #define XIAOMI_SDM439_DCP_CURRENT_UA_PINE_IDN		1000000
 #define XIAOMI_SDM439_DCP_CURRENT_UA_PINE_LIMIT		1300000
+#endif
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+static void override_smb5_lib_h_values_for_nokia_sdm439(void) {
+	if (!nokia_sdm439_mach_get())
+		return;
+
+	if (nokia_sdm439_mach_get() == NOKIA_SDM439_MACH_DEADPOOL) {
+		DCP_CURRENT_UA = 2000000;
+	} else {
+		DCP_CURRENT_UA = 1000000;
+	}
+}
 #endif
 
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_SDM439)
@@ -416,6 +432,13 @@ struct smb_charger {
 	/* alarm */
 	struct alarm		moisture_protection_alarm;
 	struct alarm		chg_termination_alarm;
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	int nokia_sdm439_last_bat_current;
+	int nokia_sdm439_last_usb_current;
+	struct qpnp_vadc_chip *nokia_sdm439_board_temp_vadc_dev; /* it is for obtaining board temperature. */
+	struct delayed_work nokia_sdm439_period_2s_work; /* updating with 2 seconds for charging projection with temperature. */
+#endif
 
 	/* pd */
 	int			voltage_min_uv;

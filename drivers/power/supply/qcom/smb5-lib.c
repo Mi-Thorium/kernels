@@ -2100,7 +2100,11 @@ int smblib_disable_hw_jeita(struct smb_charger *chg, bool disable)
 	mask = JEITA_EN_COLD_SL_FCV_BIT
 		| JEITA_EN_HOT_SL_FCV_BIT
 		| JEITA_EN_HOT_SL_CCC_BIT
-		| JEITA_EN_COLD_SL_CCC_BIT,
+		| JEITA_EN_COLD_SL_CCC_BIT;
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get())
+		mask |= BIT(4); // JEITA_EN_HARDLIMIT_BIT
+#endif
 	rc = smblib_masked_write(chg, JEITA_EN_CFG_REG, mask,
 			disable ? 0 : mask);
 	if (rc < 0) {
@@ -5026,9 +5030,22 @@ static void smblib_destroy_votables(struct smb_charger *chg)
 		destroy_votable(chg->chg_disable_votable);
 }
 
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+extern void nokia_sdm439_period_2s_of_thermal_protection(struct work_struct *work);
+extern void nokia_sdm439_smb5_lib_init_vars(void);
+extern void nokia_sdm439_late_smblib_init_hook(struct smb_charger *chg);
+#endif
+
 int smblib_init(struct smb_charger *chg)
 {
 	int rc = 0;
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		override_smb5_lib_h_values_for_nokia_sdm439();
+		nokia_sdm439_smb5_lib_init_vars();
+	}
+#endif
 
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_SDM439)
 	if (xiaomi_sdm439_mach_get()) {
@@ -5047,6 +5064,14 @@ int smblib_init(struct smb_charger *chg)
 	INIT_DELAYED_WORK(&chg->uusb_otg_work, smblib_uusb_otg_work);
 	INIT_DELAYED_WORK(&chg->bb_removal_work, smblib_bb_removal_work);
 	INIT_DELAYED_WORK(&chg->usbov_dbc_work, smblib_usbov_dbc_work);
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get()) {
+		chg->nokia_sdm439_last_bat_current = 0;
+		INIT_DELAYED_WORK(&chg->nokia_sdm439_period_2s_work, nokia_sdm439_period_2s_of_thermal_protection); /* updating with 2 seconds for charging projection with temperature. */
+		schedule_delayed_work(&chg->nokia_sdm439_period_2s_work, round_jiffies_relative(msecs_to_jiffies(2000)));
+	}
+#endif
 
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_SDM439)
 	if (xiaomi_sdm439_mach_get()) {
@@ -5146,6 +5171,11 @@ int smblib_init(struct smb_charger *chg)
 		smblib_err(chg, "Unsupported mode %d\n", chg->mode);
 		return -EINVAL;
 	}
+
+#if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
+	if (nokia_sdm439_mach_get())
+		nokia_sdm439_late_smblib_init_hook(chg);
+#endif
 
 	return rc;
 }
