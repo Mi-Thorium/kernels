@@ -31,6 +31,7 @@
 #include <linux/dma-buf.h>
 #if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
 #include <nokia-sdm439/mach.h>
+#include <nokia-sdm439/ocp2030_i2c_panel.h>
 #endif
 #if IS_ENABLED(CONFIG_MACH_XIAOMI_MSM8937)
 #include <xiaomi-msm8937/mach.h>
@@ -426,9 +427,8 @@ static int mdss_dsi_panel_power_off(struct mdss_panel_data *pdata)
 			__func__, __mdss_dsi_pm_name(DSI_PANEL_PM));
 
 #if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
-// TODO
-//	if (nokia_sdm439_mach_get())
-//		ocp2131_set_voltage(0,0);
+	if (nokia_sdm439_mach_get())
+		nokia_sdm439_ocp2131_set_voltage(0, 0);
 #endif
 
 end:
@@ -480,9 +480,8 @@ static int mdss_dsi_panel_power_on(struct mdss_panel_data *pdata)
 	}
 
 #if IS_ENABLED(CONFIG_MACH_NOKIA_SDM439)
-// TODO
-//	if (nokia_sdm439_mach_get())
-//		ocp2131_set_voltage(LCM_LDO_VOL_6V0,LCM_LDO_VOL_6V0);
+	if (nokia_sdm439_mach_get())
+		nokia_sdm439_ocp2131_set_voltage(NOKIA_SDM439_LCM_LDO_VOL_6V0, NOKIA_SDM439_LCM_LDO_VOL_6V0);
 #if IS_ENABLED(CONFIG_MACH_NOKIA_DEADPOOL)
 nokia_deadpool_skip_for_st7703_panel:
 #endif
