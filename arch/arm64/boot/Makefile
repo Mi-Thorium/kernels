@@ -66,6 +66,8 @@ $(obj)/Image.lzo: $(obj)/Image FORCE
 
 $(obj)/Image.gz-dtb: $(obj)/Image.gz $(DTB_OBJS) FORCE
 	$(call if_changed,cat)
+	$(if $(filter y,$(CONFIG_MACH_NOKIA_SDM439)),\
+		$(Q) dd if=/dev/zero bs=1M count=5 >> $@)
 
 install:
 	$(CONFIG_SHELL) $(srctree)/$(src)/install.sh $(KERNELRELEASE) \
