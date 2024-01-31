@@ -9,6 +9,8 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/types.h>
+
 #ifndef _LINUX_DISPLAY_STATE_H
 #define _LINUX_DISPLAY_STATE_H
 
